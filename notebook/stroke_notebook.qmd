@@ -1,0 +1,285 @@
+---
+title: "Build and deploy a stroke prediction model using R"
+author: "Alejandro Navas"
+date: today
+format: html
+editor: source
+---
+
+
+# Acerca del Informe de Análisis de Datos
+
+Este archivo Quarto contiene el informe del análisis de datos realizado para el proyecto sobre la construcción y despliegue de un modelo de predicción de accidentes cerebrovasculares en R. Incluye análisis como exploración de datos, estadísticas resumidas y construcción de los modelos de predicción.
+
+El informe final se completó el `r date()`.
+
+**Descripción de los Datos:**
+
+Según la Organización Mundial de la Salud (OMS), el accidente cerebrovascular es la segunda causa principal de muerte a nivel mundial, responsable de aproximadamente el 11% del total de muertes.
+
+Este conjunto de datos se utiliza para predecir si un paciente es probable que sufra un accidente cerebrovascular basándose en parámetros de entrada como el género, la edad, diversas enfermedades y el estado de fumador. Cada fila en los datos proporciona información relevante sobre el paciente.
+
+# Tarea Uno: Importar datos y preprocesamiento de datos
+
+## Instalación de los Paquetes
+
+```{r load_packages}
+
+library(pacman)
+
+p_load(
+  tidyverse,
+  tidymodels,
+  ranger,
+  xgboost,
+  kernlab,
+  naivebayes,
+  kknn,
+  discrim,
+  naniar,
+  skimr,
+  DT
+)
+
+```
+
+## Carga del Marco de Datos
+
+```{r import_data}
+
+df <- read_csv('../data/healthcare_dataset_stroke_data.csv')
+
+df |> 
+  head() |> 
+  datatable()
+
+```
+
+
+```{r glimpse_df}
+
+glimpse(df)
+
+```
+
+
+```{r change_types}
+
+df <- df |> 
+  mutate(bmi = as.numeric(bmi)) |> 
+  mutate_if(is.character, as.factor) |> 
+  mutate(
+    heart_disease = as.factor(df$heart_disease),
+    hypertension = as.factor(df$hypertension),
+    stroke = as.factor(df$stroke)
+    )
+
+glimpse(df)
+
+```
+
+
+## Descripción & Exploración del Marco de Datos 
+
+```{r}
+
+summary(df)
+
+```
+
+
+```{r}
+
+skim(df)
+
+```
+
+
+
+# Tarea Dos: Construir modelos de predicción
+
+
+```{r}
+
+# Dividir los datos en entrenamiento y validación
+set.seed(123)
+data_split <- initial_split(df, prop = 0.8, strata = heart_disease)
+train_data <- training(data_split)
+val_data <- testing(data_split)
+
+```
+
+```{r}
+
+# Crear la receta para preprocesamiento
+heart_recipe <- recipe(heart_disease ~ ., data = train_data) %>%
+  # Actualizar el rol del ID (si es aplicable)
+  update_role(id, new_role = "id") %>% 
+  # Eliminar variables con más del 90% de datos faltantes
+  step_filter_missing(all_predictors(), threshold = 0.90) %>%
+  # Eliminar variables con varianza cero
+  step_zv(all_predictors()) %>%
+  # Aplicar Yeo-Johnson a las variables numéricas para normalización
+  step_YeoJohnson(all_numeric_predictors()) %>%
+  # Convertir variables lógicas a numéricas (0 = FALSE, 1 = TRUE)
+  step_mutate(across(where(is.logical), as.numeric)) %>%
+  # Imputar valores faltantes en variables numéricas usando k-NN
+  step_impute_knn(all_numeric_predictors()) %>%
+  # Manejar niveles nuevos en datos categóricos
+  # step_novel(all_nominal_predictors(), new_level = 'new') %>%
+  # step_unknown(all_nominal_predictors(), new_level = 'not informed') %>%
+  # Convertir variables categóricas en variables dummy
+  # step_dummy(all_nominal_predictors(), -all_outcomes()) %>%
+  # Normalizar todas las variables numéricas
+  step_normalize(all_numeric_predictors()) %>%
+  # Eliminar variables altamente correlacionadas
+  step_corr(all_numeric_predictors(), threshold = 0.9)
+
+
+```
+
+```{r}
+
+# Crear el modelo de Random Forest
+rf_spec <- rand_forest(mtry = 10, trees = 500, min_n = 10) %>%
+  set_engine("ranger") %>%
+  set_mode("classification")
+
+```
+
+```{r}
+
+# Crear el modelo de regresión logística
+log_reg_spec <- logistic_reg() %>%
+  set_engine("glm") %>%
+  set_mode("classification")
+
+```
+
+```{r}
+
+# Especificar el modelo SVM
+svm_spec <- svm_rbf(cost = 1, rbf_sigma = 0.1) %>%
+  set_engine("kernlab") %>%
+  set_mode("classification")
+
+# Especificar el modelo KNN
+knn_spec <- nearest_neighbor(neighbors = 5) %>%
+  set_engine("kknn") %>%
+  set_mode("classification")
+
+# Especificar el modelo Naive Bayes
+nb_spec <- naive_Bayes() %>%
+  set_engine("naivebayes") %>%
+  set_mode("classification")
+
+
+```
+
+
+```{r}
+
+# Crear los workflows
+rf_workflow <- workflow() %>%
+  add_recipe(heart_recipe) %>%
+  add_model(rf_spec)
+
+```
+
+```{r}
+
+log_reg_workflow <- workflow() %>%
+  add_recipe(heart_recipe) %>%
+  add_model(log_reg_spec)
+
+```
+
+```{r}
+
+svm_workflow <- workflow() %>%
+  add_recipe(heart_recipe) %>%
+  add_model(svm_spec)
+
+
+
+```
+
+```{r}
+
+knn_workflow <- workflow() %>%
+  add_recipe(heart_recipe) %>%
+  add_model(knn_spec)
+
+
+```
+
+```{r}
+
+nb_workflow <- workflow() %>%
+  add_recipe(heart_recipe) %>%
+  add_model(nb_spec)
+
+```
+
+
+```{r}
+
+# Entrenar los modelos
+rf_fit <- rf_workflow %>% fit(data = train_data)
+
+
+```
+
+
+```{r}
+
+log_reg_fit <- log_reg_workflow %>% fit(data = train_data)
+
+```
+
+```{r}
+
+# Entrenar los modelos
+svm_fit <- svm_workflow %>% fit(data = train_data)
+
+
+```
+
+
+```{r}
+
+knn_fit <- knn_workflow %>% fit(data = train_data)
+
+```
+
+
+
+```{r}
+
+nb_fit <- nb_workflow %>% fit(data = train_data)
+
+```
+
+
+
+# Tarea Tres: Evaluar y seleccionar modelos de predicción
+
+```{r}
+
+```
+
+
+
+# Tarea Cuatro: Desplegar el modelo de predicción
+
+```{r}
+
+```
+
+
+
+
+# Tarea Cinco: Hallazgos y Conclusiones
+
+
+Tras todos los pasos realizados... 
