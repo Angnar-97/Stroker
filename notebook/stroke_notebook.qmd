@@ -105,7 +105,7 @@ skim(df)
 set.seed(123)
 data_split <- initial_split(df, prop = 0.8, strata = heart_disease)
 train_data <- training(data_split)
-val_data <- testing(data_split)
+test_data <- testing(data_split)
 
 ```
 
@@ -163,10 +163,20 @@ svm_spec <- svm_rbf(cost = 1, rbf_sigma = 0.1) %>%
   set_engine("kernlab") %>%
   set_mode("classification")
 
+
+```
+
+```{r}
+
 # Especificar el modelo KNN
 knn_spec <- nearest_neighbor(neighbors = 5) %>%
   set_engine("kknn") %>%
   set_mode("classification")
+
+```
+
+
+```{r}
 
 # Especificar el modelo Naive Bayes
 nb_spec <- naive_Bayes() %>%
@@ -175,6 +185,7 @@ nb_spec <- naive_Bayes() %>%
 
 
 ```
+
 
 
 ```{r}
@@ -265,6 +276,31 @@ nb_fit <- nb_workflow %>% fit(data = train_data)
 # Tarea Tres: Evaluar y seleccionar modelos de predicción
 
 ```{r}
+
+# Predicciones en el conjunto de prueba para Random Forest
+rf_test_predictions <- rf_fit %>%
+  predict(new_data = test_data, type = "class") %>%
+  bind_cols(test_data)
+
+# Predicciones en el conjunto de prueba para Regresión Logística
+log_reg_test_predictions <- log_reg_fit %>%
+  predict(new_data = test_data, type = "class") %>%
+  bind_cols(test_data)
+
+# Calcular métricas de rendimiento en conjunto de prueba
+rf_test_metrics <- rf_test_predictions %>%
+  metrics(truth = stroke, estimate = .pred_class)
+
+log_reg_test_metrics <- log_reg_test_predictions %>%
+  metrics(truth = stroke, estimate = .pred_class)
+
+# Imprimir las métricas del conjunto de prueba
+cat("Random Forest Test Metrics:\n")
+print(rf_test_metrics)
+
+
+cat("Logistic Regression Test Metrics:\n")
+print(log_reg_test_metrics)
 
 ```
 
